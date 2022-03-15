@@ -1,0 +1,24 @@
+{
+    "os": "Linux-3.10.0-1160.59.1.el7.x86_64-x86_64-with-glibc2.17",
+    "python": "3.9.7",
+    "heartbeatAt": "2022-03-15T10:31:42.067506",
+    "startedAt": "2022-03-15T10:31:39.312842",
+    "docker": null,
+    "cpu_count": 20,
+    "cuda": null,
+    "args": [
+        "-f",
+        "/zhome/f6/e/127187/.local/share/jupyter/runtime/kernel-de7073a3-dcd6-48db-96af-f971ee2e3b1c.json"
+    ],
+    "state": "running",
+    "program": "preprocessing-643a5869-c2e7-4747-ab9c-4e664a3deb5e.ipynb",
+    "root": "/zhome/f6/e/127187/Desktop/OrtKirProject",
+    "git": {
+        "remote": "https://github.com/ditteblom/OrtKirProject.git",
+        "commit": "7e73b581cd7106cb101dbb6104fd863af65bb965"
+    },
+    "email": "dgro@dtu.dk",
+    "host": "gbarlogin2",
+    "username": "dgro",
+    "executable": "/zhome/f6/e/127187/miniconda3/envs/conda_env/bin/python"
+}

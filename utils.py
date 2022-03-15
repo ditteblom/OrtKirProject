@@ -3,7 +3,6 @@ import glob
 import os
 from re import X
 from PIL import Image
-import cv2
 import numpy as np
 import torch
 from sklearn.model_selection import train_test_split
