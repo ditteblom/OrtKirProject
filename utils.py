@@ -1,27 +1,12 @@
 # preamble
-import glob
-import os
 from re import X
-from PIL import Image
 import numpy as np
 import torch
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
-import torchvision.datasets as datasets
-from torch.utils.data import DataLoader
-import torchvision.transforms as transforms
-import torchvision
-from skimage.io import imread_collection
 import matplotlib.pyplot as plt
-import pandas as pd
-import os
-from unittest import TestLoader
 import numpy as np
-import glob
-import PIL.Image as Image
 from tqdm.notebook import tqdm
 plt.style.use('seaborn')
 import wandb

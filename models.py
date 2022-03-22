@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import numpy as np
 import torchvision
+import numpy as np
+from torchvision import transforms
 
 # Define models
 class Baseline(nn.Module):
@@ -109,5 +109,94 @@ class Inception_v3(nn.Module):
     
   def forward(self, x):
     x = self.convolutional3d_2_2d(x)
-    x = self.inception(x.squeeze())
+    x = self.inception(x.squeesze())
     return x[0]
+
+class UNet(nn.Module):
+  def __init__(self, init_size = 256, init_layers=64, dropout_p = 0.2):
+      super().__init__()
+      self.init_size = init_size
+      init_layers = np.log2(init_layers).astype(int)
+      # encoder (downsampling)
+      self.encoder_0 = nn.Sequential(
+                        nn.Conv2d(in_channels=1, out_channels=2**(init_layers), kernel_size=3),
+                        nn.ReLU(),
+                        nn.Dropout(p = dropout_p),
+                        nn.BatchNorm2d(num_features = 2**(init_layers)),
+                        nn.Conv2d(in_channels=2**(init_layers), out_channels=2**(init_layers), kernel_size=3),
+                        nn.ReLU(),
+                        nn.Dropout(p = dropout_p),
+                        nn.BatchNorm2d(num_features = 2**(init_layers))
+                      )
+      
+      self.pool_0 = nn.MaxPool2d(2,2)
+      
+      self.encoder_1 = nn.Sequential(
+                        nn.Conv2d(in_channels=2**(init_layers), out_channels=2**(init_layers+1), kernel_size=3),
+                        nn.ReLU(),
+                        nn.Dropout(p = dropout_p),
+                        nn.BatchNorm2d(num_features = 2**(init_layers+1)),
+                        nn.Conv2d(in_channels=2**(init_layers+1), out_channels=2**(init_layers+1), kernel_size=3),
+                        nn.ReLU(),
+                        nn.Dropout(p = dropout_p),
+                        nn.BatchNorm2d(num_features = 2**(init_layers+1))
+                      )
+      
+      self.pool_1 = nn.MaxPool2d(2,2)
+
+      self.bottleneck = nn.Sequential(
+                          nn.Conv2d(in_channels=2**(init_layers+1), out_channels=2**(init_layers+2), kernel_size=3),
+                          nn.ReLU(),
+                          nn.Dropout(p = dropout_p),
+                          nn.BatchNorm2d(num_features = 2**(init_layers+2)),
+                          nn.Conv2d(in_channels=2**(init_layers+2), out_channels=2**(init_layers+2), kernel_size=3),
+                          nn.ReLU(),
+                          nn.Dropout(p = dropout_p),
+                          nn.BatchNorm2d(num_features = 2**(init_layers+2))
+                      )
+      
+      self.upscale_0 = nn.ConvTranspose2d(in_channels=2**(init_layers+2), out_channels=2**(init_layers+1), kernel_size=2, stride=2)
+
+      self.decoder_0 = nn.Sequential(
+                          nn.Conv2d(in_channels=2**(init_layers+2), out_channels=2**(init_layers+1), kernel_size=3),
+                          nn.ReLU(),
+                          nn.Dropout(p = dropout_p),
+                          nn.BatchNorm2d(num_features = 2**(init_layers+1)),
+                          nn.Conv2d(in_channels=2**(init_layers+1), out_channels=2**(init_layers+1), kernel_size=3),
+                          nn.ReLU(),
+                          nn.Dropout(p = dropout_p),
+                          nn.BatchNorm2d(num_features = 2**(init_layers+1))
+                      )
+        
+      self.upscale_1 = nn.ConvTranspose2d(in_channels=2**(init_layers+1), out_channels=2**(init_layers), kernel_size=2, stride=2)
+
+      self.decoder_1 = nn.Sequential(
+                          nn.Conv2d(in_channels=2**(init_layers+1), out_channels=2**(init_layers), kernel_size=3),
+                          nn.ReLU(),
+                          nn.Conv2d(in_channels=2**(init_layers), out_channels=2**(init_layers), kernel_size=3),
+                          nn.ReLU(),
+                      )
+      
+      self.fully_connected = nn.Conv2d(in_channels=2**(init_layers), out_channels=2, kernel_size=1)
+
+  def forward(self, x):
+      # Encoder
+      x = self.encoder_0(x)
+      e0 = x #save e0 for the skip-connection.
+
+      x = self.pool_0(x)
+      x = self.encoder_1(x)
+      e1 = x #save e1 for the skip-connection.
+      x = self.pool_1(x)
+
+      #Bottleneck
+      x = self.bottleneck(x)
+
+      #Decoder 
+      x = self.upscale_0(x)
+      x = self.decoder_0(torch.cat([transforms.CenterCrop(int((self.init_size-4)/2-8))(e1), x], 1))
+      x = self.upscale_1(x)
+      x = self.decoder_1(torch.cat([transforms.CenterCrop(self.init_size-36)(e0), x], 1))
+      x = self.fully_connected(x)
+      
+      return x

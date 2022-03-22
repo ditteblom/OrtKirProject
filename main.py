@@ -1,8 +1,6 @@
-import os
 import argparse
 from solver import Solver
 from dataloader import get_loader
-from torch.backends import cudnn
 import torchvision.transforms as transforms
 
 
@@ -45,15 +43,16 @@ if __name__ == '__main__':
 
     # Model configuration.
     parser.add_argument('--repair_type', type=str, default='001_hansson_pin_system', help='type of fracture repair')
-    parser.add_argument('--model', type=str, default='baseline', help='type of model')
+    parser.add_argument('--model', type=str, default='inceptionv3', help='type of model')
     
     # Training configuration.
-    parser.add_argument('--data_dir', type=str, default='/work3/dgro/Data')
+    parser.add_argument('--data_dir', type=str, default='/work3/dgro/Data/')
     parser.add_argument('--batch_size', type=int, default=16, help='mini-batch size')
     parser.add_argument('--num_iters', type=int, default=1000, help='number of total iterations')
+    parser.add_argument('--learning_rate', type=float, default=0.0001, help='learning rate for optimizer')
     
     # Miscellaneous.
-    parser.add_argument('--log_step', type=int, default=10)
+    parser.add_argument('--log_step', type=int, default=1)
 
     config = parser.parse_args()
     print(config)

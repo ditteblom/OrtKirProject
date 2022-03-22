@@ -1,5 +1,3 @@
-import sys
-sys.settrace()
 import glob
 import numpy as np
 import torch
@@ -15,18 +13,16 @@ import torchvision
 from utils import train, predict, score_fluoroscopy, score_time, score_xray, score_retries_cannulated_dhs, score_retries_hansson, \
                 drill_dist_hansson, guidewire_dist, drill_dist_hansson
 from skimage.io import imread_collection
-import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 class SimulationData(torch.utils.data.Dataset):
-    def __init__(self, repair_type, split, transform = None, data_path = "Data", train_size = 0.8, test_size = 0.2, seed = 8):
+    def __init__(self, repair_type, split, data_path = "/work3/dgro/Data/", transform = None, train_size = 0.8, test_size = 0.2, seed = 8):
         'Initializing data'
         self.data_path = data_path
         self.repair_type = repair_type + "/001_copenahgen_test_1"
-        #self.type = type
         self.transform = transform
 
         img_files = glob.glob(self.data_path + '***/**/*.jpg', recursive=True)
@@ -132,7 +128,7 @@ class SimulationData(torch.utils.data.Dataset):
         elif split == "test":
             self.images, self.scores = image_test, score_test
         else:
-          print("Please provide either train, val or test as split.")
+            print("Please provide either train, val or test as split.")
 
         
     def __len__(self):

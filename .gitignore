@@ -127,3 +127,19 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# models
+*.python
+
+# data
+*.csv
+
+# submit shell script
+*.sh
+
+# outputs from HPC
+*.err
+*.out
+
+# models
+*.pth

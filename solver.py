@@ -4,6 +4,9 @@ import time
 import torch.nn.functional as F
 import numpy as np
 import datetime
+import wandb
+
+wandb.init(project = "ort-project", entity = "ditteblom", reinit=True)
 
 class Solver(object):
 
@@ -16,6 +19,7 @@ class Solver(object):
 
         # Model configurations.
         self.repair = config.repair_type
+        self.model = config.model
 
         # Training configurations.
         self.batch_size = config.batch_size
@@ -28,7 +32,7 @@ class Solver(object):
         self.log_step = config.log_step
 
         # Build the model and tensorboard.
-        self.build_model()
+        self.build_model(self.model)
 
             
     def build_model(self, model):
@@ -135,6 +139,14 @@ class Solver(object):
             #                                 4. Miscellaneous                                    #
             # =================================================================================== #
 
+            # log on wandb.ai
+            wandb.log({"train loss": np.mean(train_loss),
+                        "val loss": np.mean(val_loss),
+            })
+
+            # to watch on wandb.ai
+            wandb.watch(self.network, log = "None")
+
             # Print out training information.
             if (i+1) % self.log_step == 0:
                 et = time.time() - start_time
@@ -143,3 +155,11 @@ class Solver(object):
                 for tag in keys:
                     log += ", {}: {:.4f}".format(tag, loss_log[tag])
                 print(loss_log)
+
+                # Save model checkpoint.
+                state = {
+                    'epoch': i+1,
+                    'state_dict': self.network.state_dict(),
+                }
+                save_name = 'model_checkpoint_' + str(self.model) + '.pth'
+                torch.save(state, save_name)
