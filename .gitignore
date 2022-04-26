@@ -143,3 +143,8 @@ dmypy.json
 
 # models
 *.pth
+*.ckpt
+
+# data and wand
+Data/
+wandb/

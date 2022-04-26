@@ -1,7 +1,10 @@
+from __future__ import annotations
 import glob
 import numpy as np
 import torch
 from sklearn.model_selection import train_test_split
+import PIL.Image as Image
+from sklearn.preprocessing import StandardScaler
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -13,10 +16,11 @@ import torchvision
 from utils import train, predict, score_fluoroscopy, score_time, score_xray, score_retries_cannulated_dhs, score_retries_hansson, \
                 drill_dist_hansson, guidewire_dist, drill_dist_hansson
 from skimage.io import imread_collection
+import cv2
 import pandas as pd
 import numpy as np
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+eps = 10e-16
 
 class SimulationData(torch.utils.data.Dataset):
     def __init__(self, repair_type, split, data_path = "/work3/dgro/Data/", transform = None, train_size = 0.8, test_size = 0.2, seed = 8):
@@ -24,6 +28,9 @@ class SimulationData(torch.utils.data.Dataset):
         self.data_path = data_path
         self.repair_type = repair_type + "/001_copenahgen_test_1"
         self.transform = transform
+
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = device
 
         img_files = glob.glob(self.data_path + '***/**/*.jpg', recursive=True)
         img_files = [ x for x in img_files if self.repair_type in x ]
@@ -116,17 +123,21 @@ class SimulationData(torch.utils.data.Dataset):
 
         #image_paths = df.image_path.tolist()
         scores_list = df.score.tolist()
+        scores_list = torch.Tensor(scores_list).to(self.device)
 
         image_trainval, image_test, score_trainval, score_test = train_test_split(image_paths, scores_list, test_size=test_size, train_size=train_size, random_state=seed)
         image_train, image_val, score_train, score_val = train_test_split(image_trainval, score_trainval, test_size=0.2, train_size=0.8, random_state=seed)
 
+        self.mean_ = 'log(1-scores)' #torch.mean(score_train)
+        self.std_ = 'log(1-scores)' #torch.mean(score_trainval)
+        
         # devide images into train, validation and test set
         if split == "train":
-            self.images, self.scores = image_train, score_train
+            self.images, self.scores = image_train, score_train#torch.log(1-score_train+eps)#(score_train-self.mean_)/self.std_
         elif split == "val":
-            self.images, self.scores = image_val, score_val
+            self.images, self.scores = image_val, score_val#torch.log(1-score_val+eps)#(score_val-self.mean_)/self.std_
         elif split == "test":
-            self.images, self.scores = image_test, score_test
+            self.images, self.scores = image_test, score_test#torch.log(1-score_test+eps)#(score_test-self.mean_)/self.std_
         else:
             print("Please provide either train, val or test as split.")
 
@@ -137,23 +148,193 @@ class SimulationData(torch.utils.data.Dataset):
 
     def __getitem__(self,idx):
         'Generate one sample of data'
+        dtype = torch.cuda.FloatTensor
         image_path = self.images[idx]
-        images = imread_collection([image_path[0], image_path[1]], conserve_memory=True) # stack the frontal and lateral images
-        score = self.scores[idx]
-        if self.transform:
-            #image = transforms.functional.invert(image) # convert image to negative (like Xray images)
-            #image = self.transform(image) # perform transforms
-            images = torch.stack([self.transform(img) for img in images], dim = 1) # transform both frontal and lateral images
-            #images = images.permute(images, (1,0,2,3))
-        return images, score
+        # # load plain image (without screws)
+        # plainFrontal = cv2.imread('/work3/dgro/frontal.jpg')
+        # plainFrontal = cv2.cvtColor(plainFrontal, cv2.COLOR_BGR2GRAY).astype(np.uint8)
+        # plainLateral = cv2.imread('/work3/dgro/lateral.jpg')
+        # plainLateral = cv2.cvtColor(plainLateral, cv2.COLOR_BGR2GRAY).astype(np.uint8)
+        # # load image with screws
+        # grayFrontal = cv2.imread(image_path[0])
+        # grayFrontal = cv2.cvtColor(grayFrontal, cv2.COLOR_BGR2GRAY).astype(np.uint8)
+        # grayLateral = cv2.imread(image_path[1])
+        # grayLateral = cv2.cvtColor(grayLateral, cv2.COLOR_BGR2GRAY).astype(np.uint8)
 
-def get_loader(repair_type, split, data_path = "Data", batch_size=16, transform = None, num_workers=0):
+        # #### Frontal ####
+        # # initialize SIFT
+        # sift = cv2.SIFT_create()
+        # # find keypoints and descriptors in each image
+        # keypoints_plain, descriptors_plain = sift.detectAndCompute(plainFrontal,None)
+        # keypoints_im, descriptors_im = sift.detectAndCompute(grayFrontal,None)
+        # # initialize brute force matcher
+        # bf = cv2.BFMatcher(crossCheck=True)
+        # # Match descriptors.
+        # matches = bf.match(descriptors_plain,descriptors_im)
+        # # find source and distance points
+        # src_pts = np.float32([ keypoints_plain[m.queryIdx].pt for m in matches ]).reshape(-1,1,2)
+        # dst_pts = np.float32([ keypoints_im[m.trainIdx].pt for m in matches ]).reshape(-1,1,2)
+        # # Find Homography matrix
+        # M, _ = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC,5.0)
+        # # find shape of plain (without screws) image
+        # rows, cols = plainFrontal.shape
+        # anFrontal = cv2.warpPerspective(plainFrontal,M,(rows,cols))#[:image.shape[0],:image.shape[1]]
+        # if anFrontal.shape[0] > grayFrontal.shape[0]:
+        #     anFrontal = anFrontal[:grayFrontal.shape[0],:]
+        # else:
+        #     grayFrontal = grayFrontal[:anFrontal.shape[0],:]
+        # if anFrontal.shape[1] > grayFrontal.shape[1]:
+        #     anFrontal = anFrontal[:,:grayFrontal.shape[1]]
+        # else:
+        #     grayFrontal = grayFrontal[:,:anFrontal.shape[1]]
+        # assert anFrontal.shape == grayFrontal.shape, "Annotation and image should be same size"
+        # # subtract image to extract screws
+        # anFrontal = (anFrontal-grayFrontal)
+        # # threshold image
+        # anFrontal = np.where(anFrontal>29, 1, 0).astype(np.uint8)
+        # # # crop out background and pad to fit original shape
+        # crop_size_x, crop_size_y = int(np.floor((anFrontal.shape[0]*(3/4)))), int(np.floor((anFrontal.shape[1]*(3/4))))
+        # pad_x, pad_y = int((anFrontal.shape[0]-(crop_size_x-1))/2), int((anFrontal.shape[1]-(crop_size_y-1))/2)
+        # anFrontal = transforms.CenterCrop((crop_size_x,crop_size_y))(torch.tensor(anFrontal))
+        # anFrontal = (transforms.Pad((pad_x,pad_y))(anFrontal))
+        # # # use erosion and dilation to remove some noise
+        # # kernel = np.ones((7,7), np.uint8)
+        # # anFrontal = cv2.erode(anFrontal.numpy(), kernel, iterations=1)
+        # # anFrontal = cv2.dilate(anFrontal, kernel, iterations=1)
+        # anFrontal = np.array(anFrontal).astype(np.uint8)
+
+        # #### Lateral ####
+        # # initialize SIFT
+        # sift = cv2.SIFT_create()
+        # # find keypoints and descriptors in each image
+        # keypoints_plain, descriptors_plain = sift.detectAndCompute(plainLateral,None)
+        # keypoints_im, descriptors_im = sift.detectAndCompute(grayLateral,None)
+        # # initialize brute force matcher
+        # bf = cv2.BFMatcher(crossCheck=True)
+        # # Match descriptors.
+        # matches = bf.match(descriptors_plain,descriptors_im)
+        # # find source and distance points
+        # src_pts = np.float32([ keypoints_plain[m.queryIdx].pt for m in matches ]).reshape(-1,1,2)
+        # dst_pts = np.float32([ keypoints_im[m.trainIdx].pt for m in matches ]).reshape(-1,1,2)
+        # # Find Homography matrix
+        # M, _ = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC,5.0)
+        # # find shape of plain (without screws) image
+        # rows, cols = plainLateral.shape
+        # anLateral = cv2.warpPerspective(plainLateral,M,(rows,cols))#[:image.shape[0],:image.shape[1]]
+        # if anLateral.shape[0] > grayLateral.shape[0]:
+        #     anLateral= anLateral[:grayLateral.shape[0],:]
+        # else:
+        #     grayLateral = grayLateral[:anLateral.shape[0],:]
+        # if anLateral.shape[1] > grayLateral.shape[1]:
+        #     anLateral = anLateral[:,:grayLateral.shape[1]]
+        # else:
+        #     grayLateral = grayLateral[:,:anLateral.shape[1]]
+        # assert anLateral.shape == grayLateral.shape, "Annotation and image should be same size"
+        # # subtract image to extract screws
+        # anLateral = (anLateral-grayLateral)
+        # # threshold image
+        # anLateral = np.where(anLateral>29, 1, 0).astype(np.uint8)
+        # # # crop out background and pad to fit original shape
+        # crop_size_x, crop_size_y = int(np.floor((anLateral.shape[0]*(4/5)))), int(np.floor((anLateral.shape[1]*(4/5))))
+        # pad_x, pad_y = int((anLateral.shape[0]-(crop_size_x-1))/2), int((anLateral.shape[1]-(crop_size_y-1))/2)
+        # anLateral = transforms.CenterCrop((crop_size_x,crop_size_y))(torch.tensor(anLateral))
+        # anLateral = (transforms.Pad((pad_x,pad_y))(anLateral))
+        # # # use erosion and dilation to remove some noise
+        # # kernel = np.ones((7,7), np.uint8)
+        # # anLateral = cv2.erode(anLateral.numpy(), kernel, iterations=1)
+        # # anLateral = cv2.dilate(anLateral, kernel, iterations=1)
+        # anLateral = np.array(anLateral).astype(np.uint8)
+
+        ### FOR ANNOTATION OF BONE
+        # # load plain image (without screws)
+        # plain = cv2.imread('/work3/dgro/frontal.jpg')
+        # plain = cv2.cvtColor(plain, cv2.COLOR_BGR2GRAY).astype(np.uint8)
+        # # load image with bone mask
+        # boneMask = cv2.imread('/work3/dgro/frontalBoneMask.png')
+        # boneMask = cv2.cvtColor(boneMask, cv2.COLOR_BGR2GRAY).astype(np.uint8)
+        # boneMask = np.where(boneMask>0, 1, 0).astype(np.uint8)
+        # # load image with screws
+        # image = cv2.imread(image_path[0])
+        # image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY).astype(np.uint8)
+        # # initialize SIFT
+        # sift = cv2.SIFT_create()
+        # # find keypoints and descriptors in each image
+        # keypoints_plain, descriptors_plain = sift.detectAndCompute(plain,None)
+        # keypoints_im, descriptors_im = sift.detectAndCompute(image,None)
+        # # initialize brute force matcher
+        # bf = cv2.BFMatcher(crossCheck=True)
+        # # Match descriptors.
+        # matches = bf.match(descriptors_plain,descriptors_im)
+        # # find source and distance points
+        # src_pts = np.float32([ keypoints_plain[m.queryIdx].pt for m in matches ]).reshape(-1,1,2)
+        # dst_pts = np.float32([ keypoints_im[m.trainIdx].pt for m in matches ]).reshape(-1,1,2)
+        # # Find Homography matrix
+        # M, _ = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC,5.0)
+        # # find shape of plain (without screws) image
+        # rows, cols = plain.shape
+        # anScrew = cv2.warpPerspective(plain,M,(rows,cols))#[:image.shape[0],:image.shape[1]]
+        # anBone = cv2.warpPerspective(boneMask,M,(rows,cols))
+        # if anScrew.shape[0] > image.shape[0]:
+        #     anScrew = anScrew[:image.shape[0],:]
+        #     anBone = anBone[:image.shape[0],:]
+        # else:
+        #     image = image[:anScrew.shape[0],:]
+        # if anScrew.shape[1] > image.shape[1]:
+        #     anScrew = anScrew[:,:image.shape[1]]
+        #     anBone = anBone[:,:image.shape[1]]
+        # else:
+        #     image = image[:,:anScrew.shape[1]]
+        # assert anScrew.shape == image.shape, "Annotation and image should be same size"
+        # # subtract image to extract screws
+        # anScrew = (anScrew-image)
+        # # threshold image
+        # anScrew = np.where(anScrew>29, 1, 0).astype(np.uint8)
+        # #_,an = cv2.threshold(an,29,an.max(),cv2.THRESH_BINARY)
+        # # crop out background and pad to fit original shape
+        # crop_size_x, crop_size_y = int(np.floor((anScrew.shape[0]*(3/4)))), int(np.floor((anScrew.shape[1]*(3/4))))
+        # pad_x, pad_y = int((anScrew.shape[0]-(crop_size_x-1))/2), int((anScrew.shape[1]-(crop_size_y-1))/2)
+        # anScrew = transforms.CenterCrop((crop_size_x,crop_size_y))(torch.tensor(anScrew))
+        # anScrew = (transforms.Pad((pad_x,pad_y))(anScrew))
+        # # use erosion and dilation to remove some noise
+        # kernel = np.ones((7,7), np.uint8)
+        # anScrew = cv2.erode(anScrew.numpy(), kernel, iterations=1)
+        # anScrew = cv2.dilate(anScrew, kernel, iterations=1)
+        # anScrew = np.where(anScrew>0, 1, 0).astype(np.uint8)
+        # anBone = np.where(anBone>0, 1, 0).astype(np.uint8)
+        # # if transformation is provided, transform both image and annotations
+        # if self.transform:
+        #     image = self.transform(image)
+        #     anScrew = self.transform(anScrew)
+        #     anBone = self.transform(anBone)
+        # # stack images together - first channel is the bone, second channel is the screws
+        # # shape = (n_channel, height, width)
+        # an = np.stack([anBone,anScrew],axis = 0)
+        # return image and annotation
+        # score = self.scores[idx]
+        images = imread_collection([image_path[0], image_path[1]], conserve_memory=True) # stack the frontal and lateral images
+        if self.transform:
+            images = torch.stack([self.transform(img) for img in images], dim = 1) # transform both frontal and lateral images
+        #     grayFrontal = self.transform(grayFrontal)
+        #     grayLateral = self.transform(grayLateral)
+        #     anFrontal = self.transform(anFrontal)
+        #     anLateral = self.transform(anLateral)
+        # grays = np.stack([grayFrontal,grayLateral],axis = 0)
+        # ans = np.stack([anFrontal,anLateral],axis = 0)
+        score = self.scores[idx]
+        return images, score#, grays, ans
+
+    def __getscale__(self):
+        '''Return scales (mean and std) for trainset'''
+        return self.mean_, self.std_
+
+def get_loader(repair_type, split, data_path = "/work3/dgro/Data/", batch_size=16, transform = None, num_workers=0):
     """Build and return a data loader."""
     
     dataset = SimulationData(repair_type, split, data_path, transform, train_size = 0.8, test_size = 0.2, seed = 8)
-    
     data_loader = data.DataLoader(dataset=dataset,
                                   batch_size=batch_size,
                                   shuffle=True,
                                   num_workers=num_workers)
+
+    print('Finished loading dataset.')
     return data_loader
