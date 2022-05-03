@@ -47,14 +47,14 @@ if __name__ == '__main__':
 
     # Model configuration.
     parser.add_argument('--repair_type', type=str, default='001_hansson_pin_system', help='type of fracture repair')
-    parser.add_argument('--model', type=str, default='mvcnn_baseline', help='type of model')
+    parser.add_argument('--model', type=str, default='mvcnn_vgg19', help='type of model')
     parser.add_argument('--fusion', type=str, default='late', help='type of fusion')
     
     # Training configuration.
     parser.add_argument('--data_dir', type=str, default='/work3/dgro/Data/')
     parser.add_argument('--batch_size', type=int, default=24, help='batch size')
     parser.add_argument('--num_iters', type=int, default=10000, help='number of total iterations')
-    parser.add_argument('--learning_rate', type=float, default=0.001, help='learning rate for optimizer')
+    parser.add_argument('--learning_rate', type=float, default=0.0001, help='learning rate for optimizer')
     
     # Miscellaneous.
     parser.add_argument('--log_step', type=int, default=1)

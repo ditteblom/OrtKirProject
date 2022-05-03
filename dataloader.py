@@ -20,6 +20,23 @@ import cv2
 import pandas as pd
 import numpy as np
 
+experts = ['HenrikV',
+'hpalm',
+'jalv003',
+'LarsL',
+'MadsV',
+'NanaS',
+'PeterS',
+'PeterT',
+'ThomasB']
+
+def if_expert(row):
+    for expert in experts:
+        if expert in row:
+            return 1
+        else:
+            return 0
+
 eps = 10e-16
 
 class SimulationData(torch.utils.data.Dataset):
@@ -107,37 +124,49 @@ class SimulationData(torch.utils.data.Dataset):
         #    df = df[df.image_path.str.contains('|'.join([type]))==True]
         #df.reset_index(drop=True, inplace = True)
 
-        df.to_csv("data.csv")
+        assess = pd.read_csv('data_randomized_AG_020522.csv', index_col = 0, delimiter=';')
+        assess = assess[['no','assessment']]
+
+        data = df.merge(assess, how = 'left')
+        data['expert']= data.image_path_frontal.apply(if_expert)
+
+        data.to_csv("data.csv")
 
         # get path for frontal images
         #df_frontal = df[df.image_path.str.contains('|'.join(["frontal"]))==True]
-        frontal_paths = df.image_path_frontal.tolist() #[df.image_path.str.contains('|'.join(["frontal"]))==True].tolist()
+        frontal_paths = data.image_path_frontal.tolist() #[df.image_path.str.contains('|'.join(["frontal"]))==True].tolist()
 
         # get path for lateral images
         #df_lateral = df[df.image_path.str.contains('|'.join(["lateral"]))==True]
-        lateral_paths = df.image_path_lateral.tolist()
+        lateral_paths = data.image_path_lateral.tolist()
 
         image_paths = []
         for i in range(len(frontal_paths)):
           image_paths.append([frontal_paths[i],lateral_paths[i]]) # stack frontal and lateral paths
 
         #image_paths = df.image_path.tolist()
-        scores_list = df.score.tolist()
+        scores_list = data.score.tolist()
         scores_list = torch.Tensor(scores_list).to(self.device)
 
-        image_trainval, image_test, score_trainval, score_test = train_test_split(image_paths, scores_list, test_size=test_size, train_size=train_size, random_state=seed)
-        image_train, image_val, score_train, score_val = train_test_split(image_trainval, score_trainval, test_size=0.2, train_size=0.8, random_state=seed)
+        assess_list = data.assessment.tolist()
+        assess_list = torch.Tensor(assess_list).to(self.device)
+
+        expert_list = data.expert.tolist()
+        expert_list = torch.Tensor(expert_list).to(self.device)
+
+        image_trainval, image_test, score_trainval, score_test, assess_trainval, assess_test = train_test_split(image_paths, scores_list, assess_list, test_size=test_size, train_size=train_size, random_state=seed)
+        image_train, image_val, score_train, score_val, assess_train, assess_val = train_test_split(image_trainval, score_trainval, assess_trainval, test_size=0.2, train_size=0.8, random_state=seed)
 
         self.mean_ = 'log(1-scores)' #torch.mean(score_train)
         self.std_ = 'log(1-scores)' #torch.mean(score_trainval)
         
         # devide images into train, validation and test set
         if split == "train":
-            self.images, self.scores = image_train, score_train#torch.log(1-score_train+eps)#(score_train-self.mean_)/self.std_
+            self.images, self.scores, self.assess = image_train, score_train, assess_train#torch.log(1-score_train+eps)#(score_train-self.mean_)/self.std_
         elif split == "val":
-            self.images, self.scores = image_val, score_val#torch.log(1-score_val+eps)#(score_val-self.mean_)/self.std_
+            self.images, self.scores, self.assess = image_val, score_val, assess_val#torch.log(1-score_val+eps)#(score_val-self.mean_)/self.std_
         elif split == "test":
-            self.images, self.scores = image_test, score_test#torch.log(1-score_test+eps)#(score_test-self.mean_)/self.std_
+            self.images, self.scores, self.assess = image_test, score_test, assess_test#torch.log(1-score_test+eps)#(score_test-self.mean_)/self.std_
         else:
             print("Please provide either train, val or test as split.")
 
@@ -148,7 +177,6 @@ class SimulationData(torch.utils.data.Dataset):
 
     def __getitem__(self,idx):
         'Generate one sample of data'
-        dtype = torch.cuda.FloatTensor
         image_path = self.images[idx]
         # # load plain image (without screws)
         # plainFrontal = cv2.imread('/work3/dgro/frontal.jpg')
@@ -312,8 +340,19 @@ class SimulationData(torch.utils.data.Dataset):
         # return image and annotation
         # score = self.scores[idx]
         images = imread_collection([image_path[0], image_path[1]], conserve_memory=True) # stack the frontal and lateral images
+        
+        # resize to 900x900 and crop
+        transform = transforms.Compose([transforms.ToPILImage(),
+                                    transforms.Resize((900,900)),
+                                    ])
+
+        images_resized = [transform(img) for img in images]
+        images_crop = []
+        images_crop += [np.array(images_resized[0])[50:650,200:800]/255.0]
+        images_crop += [np.array(images_resized[1])[100:800,100:800]/255.0]
+
         if self.transform:
-            images = torch.stack([self.transform(img) for img in images], dim = 1) # transform both frontal and lateral images
+            images = torch.stack([self.transform(img) for img in images_crop], dim = 1) # transform both frontal and lateral images
         #     grayFrontal = self.transform(grayFrontal)
         #     grayLateral = self.transform(grayLateral)
         #     anFrontal = self.transform(anFrontal)
@@ -321,7 +360,8 @@ class SimulationData(torch.utils.data.Dataset):
         # grays = np.stack([grayFrontal,grayLateral],axis = 0)
         # ans = np.stack([anFrontal,anLateral],axis = 0)
         score = self.scores[idx]
-        return images, score#, grays, ans
+        assess = self.assess[idx]
+        return images.float(), score.float(), assess.float()#, grays, ans
 
     def __getscale__(self):
         '''Return scales (mean and std) for trainset'''

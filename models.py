@@ -331,59 +331,66 @@ class MVCNN_Inception(nn.Module):
 
 class MVCNN_Baseline(nn.Module):
   # from the paper "Multi-view classification with convolutional neural networks" by Seeland and Mäder 2020
-  def __init__(self):
+  def __init__(self, actfun):
     super(MVCNN_Baseline, self).__init__()
 
     self.nView = 2 # default
+
+    if actfun == 'relu':
+      act = nn.ReLU()
+    elif actfun == 'elu':
+      act = nn.ELU()
     
     # convolutional layers
     self.convolutional = nn.Sequential(
                   # CONV 1_1
                   nn.Conv2d(in_channels=3, out_channels=16, kernel_size=7, stride=1, padding=3),
-                  nn.ReLU(),
+                  act,
 
                   # CONV 1_2
                   nn.Conv2d(in_channels=16, out_channels=32, kernel_size=7, stride=1, padding=3),
-                  nn.ReLU(),
+                  act,
 
                   # CONV 1_3
                   nn.Conv2d(in_channels=32, out_channels=32, kernel_size=5, stride=1, padding=2),
 
                   # MAXPOOL 1, 224 -> 112
                   nn.MaxPool2d(kernel_size=2),
-                  nn.ReLU(),
+                  act,
 
                   # CONV 2_1
                   nn.Conv2d(in_channels=32, out_channels=64, kernel_size=5, stride=1, padding=2),
-                  nn.ReLU(),
+                  act,
 
                   # CONV 2_2
                   nn.Conv2d(in_channels=64, out_channels=128, kernel_size=5, stride=1, padding=2),
-                  nn.ReLU(),
+                  act,
 
                   # CONV 2_3
                   nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding=1),
 
                   # MAXPOOL 2, 112 -> 56
                   nn.MaxPool2d(kernel_size=2),
+                  #act,
 
                   # CONV 3_1
                   nn.Conv2d(in_channels=256, out_channels=128, kernel_size=3, stride=1, padding=1),
-                  nn.ReLU(),
+                  act,
 
                   # CONV 3_2
                   nn.Conv2d(in_channels=128, out_channels=64, kernel_size=3, stride=1, padding=1),
-                  nn.ReLU(),
+                  act,
 
                   # CONV 3_3
                   nn.Conv2d(in_channels=64, out_channels=32, kernel_size=3, stride=1, padding=1),
+                  #act,
 
                   # MAXPOOL 3, 56 -> 28
                   nn.MaxPool2d(kernel_size=2),
         )
 
     self.fc = nn.Sequential(
-      nn.Linear(28**2*32,1024), nn.ReLU()
+      nn.Linear(28**2*32,1024), act
     )
 
     # fully connected layer after concatenation

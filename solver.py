@@ -8,6 +8,7 @@ import wandb
 from torchvision import transforms
 import matplotlib.pyplot as plt
 from utils import saliency
+from torch.nn.parallel import DistributedDataParallel
 
 class Solver(object):
 
@@ -55,6 +56,13 @@ class Solver(object):
                             text=f"Training on {self.device}"
                         )
 
+        self.network.to(self.device)
+
+        if torch.cuda.device_count() > 1:
+            print("Let's use", torch.cuda.device_count(), "GPUs!")
+            # EX. dim = 0 [30, xxx] -> [10, ...], [10, ...], [10, ...] on 3 GPUs
+            self.network = DistributedDataParallel(self.network, device_ids=list(range(torch.cuda.device_count())))
+
         # Set up weights and biases config
         wandb.config.update(config)
 
@@ -90,8 +98,6 @@ class Solver(object):
         for name,param in self.network.named_parameters():
             if param.requires_grad is True:
                 print(name, param.requires_grad)
-        
-        self.network.to(self.device)
 
     def reset_grad(self):
         """Reset the gradient buffers."""
@@ -106,6 +112,9 @@ class Solver(object):
         
         # Print logs in specified order
         keys = ['train loss','validation loss']
+
+        # to watch on wandb.ai
+        wandb.watch(self.network, log = "None")
             
         # Start training.
         print('Start training...')
@@ -120,7 +129,7 @@ class Solver(object):
 
             # Fetch data.
             for _, (data, scores) in enumerate(data_loader):
-                data, scores = data.to(self.device), scores.to(self.device)#, grays.to(self.device), ans.to(self.device)
+                data, scores = data.to(self.device, dtype=torch.float), scores.to(self.device)#, grays.to(self.device), ans.to(self.device)
 
                 #_, _, _, rows, _ = data.shape
                 #Center crop the segmentation
@@ -147,8 +156,7 @@ class Solver(object):
                 # else:
                 output = self.network(data)
                 # loss
-                loss = F.mse_loss(output.float(), scores.float().unsqueeze(1))
-                
+                loss = F.l1_loss(output.float(), scores.float().unsqueeze(1))
 
                 # Backward and optimize.
                 loss.backward()
@@ -166,7 +174,7 @@ class Solver(object):
             # Fetch validation data.
             for data, scores in val_loader:
 
-                data, scores = data.to(self.device), scores.to(self.device)
+                data, scores = data.to(self.device, dtype=torch.float), scores.to(self.device)
 
                 # centercrop annotation
                 #ans = transforms.CenterCrop(88)(ans).long()
@@ -184,7 +192,7 @@ class Solver(object):
                     # else:
                     output = self.network(data)
                     # loss
-                    loss = F.mse_loss(output.float(), scores.float().unsqueeze(1))
+                    loss = F.l1_loss(output.float(), scores.float().unsqueeze(1))
 
                 # log validation loss
                 val_loss.append(loss.detach().item())
@@ -253,14 +261,14 @@ class Solver(object):
                     fig.suptitle(self.run_name)
 
                     ax[0,0].imshow(image.permute(1, 2, 3, 0)[0].cpu().numpy())
-                    ax[0,0].set_title(f'{score.item():.3f}, {output[0].item():.3f}')
+                    ax[0,0].set_title("Epoch: {:d}, Score: {:.4f}, Prediction: {:.4f}".format(i+1, score.item(), output[0].item()))
                     ax[0,0].imshow(model_slc[0], cmap = plt.cm.hot, alpha = 0.5)
 
                     ax[0,1].set_title('Saliency map frontal')
                     ax[0,1].imshow(model_slc[0], cmap = plt.cm.hot)
 
                     ax[1,0].imshow(image.permute(1, 2, 3, 0)[1].cpu().numpy())
-                    ax[1,0].set_title(f'{score.item():.3f}, {output[0].item():.3f}')
+                    ax[1,0].set_title("Epoch: {:d}, Score: {:.4f}, Prediction: {:.4f}".format(i+1, score.item(), output[0].item()))
                     ax[1,0].imshow(model_slc[1], cmap = plt.cm.hot, alpha = 0.5)
 
                     ax[1,1].set_title('Saliency map lateral')
@@ -275,5 +283,3 @@ class Solver(object):
                         "train loss": np.mean(train_loss),
                         "val loss": np.mean(val_loss),
             })
-            # to watch on wandb.ai
-            wandb.watch(self.network, log = "None")
