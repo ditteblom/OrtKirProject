@@ -331,7 +331,7 @@ class MVCNN_Inception(nn.Module):
 
 class MVCNN_Baseline(nn.Module):
   # from the paper "Multi-view classification with convolutional neural networks" by Seeland and Mäder 2020
-  def __init__(self, actfun):
+  def __init__(self, actfun, alpha):
     super(MVCNN_Baseline, self).__init__()
 
     self.nView = 2 # default
@@ -339,7 +339,7 @@ class MVCNN_Baseline(nn.Module):
     if actfun == 'relu':
       act = nn.ReLU()
     elif actfun == 'elu':
-      act = nn.ELU()
+      act = nn.ELU(alpha=alpha)
     
     # convolutional layers
     self.convolutional = nn.Sequential(
@@ -371,7 +371,7 @@ class MVCNN_Baseline(nn.Module):
 
                   # MAXPOOL 2, 112 -> 56
                   nn.MaxPool2d(kernel_size=2),
-                  #act,
+                  act,#act,
 
                   # CONV 3_1
                   nn.Conv2d(in_channels=256, out_channels=128, kernel_size=3, stride=1, padding=1),
@@ -383,10 +383,10 @@ class MVCNN_Baseline(nn.Module):
 
                   # CONV 3_3
                   nn.Conv2d(in_channels=64, out_channels=32, kernel_size=3, stride=1, padding=1),
-                  #act,
 
                   # MAXPOOL 3, 56 -> 28
                   nn.MaxPool2d(kernel_size=2),
+                  act,#act
         )
 
     self.fc = nn.Sequential(

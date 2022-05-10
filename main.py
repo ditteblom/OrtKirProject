@@ -47,8 +47,10 @@ if __name__ == '__main__':
 
     # Model configuration.
     parser.add_argument('--repair_type', type=str, default='001_hansson_pin_system', help='type of fracture repair')
-    parser.add_argument('--model', type=str, default='mvcnn_vgg19', help='type of model')
+    parser.add_argument('--model', type=str, default='mvcnn_baseline', help='type of model')
     parser.add_argument('--fusion', type=str, default='late', help='type of fusion')
+    parser.add_argument('--actfun', type=str, default='relu', help='type of activation function')
+    parser.add_argument('--alpha', type=float, default='1', help='alpha for elu activation function')
     
     # Training configuration.
     parser.add_argument('--data_dir', type=str, default='/work3/dgro/Data/')

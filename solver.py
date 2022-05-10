@@ -2,13 +2,25 @@ import torch
 from models import MVCNN_VGG19, Baseline, VGG16, Inception_v3, MVCNN_Inception, MVCNN_UNet, MVCNN_VGG19_early, MVCNN_Baseline
 import time
 import torch.nn.functional as F
+import torch.distributed as dist
 import numpy as np
 import datetime
+import os
 import wandb
 from torchvision import transforms
 import matplotlib.pyplot as plt
 from utils import saliency
 from torch.nn.parallel import DistributedDataParallel
+
+def setup(rank, world_size):
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = '12355'
+
+    # initialize the process group
+    dist.init_process_group("gloo", rank=rank, world_size=world_size)
+
+def cleanup():
+    dist.destroy_process_group()
 
 class Solver(object):
 
@@ -23,6 +35,8 @@ class Solver(object):
         self.repair = config.repair_type
         self.model = config.model
         self.fusion = config.fusion
+        self.actfun = config.actfun
+        self.alpha = config.alpha
 
         # Training configurations.
         self.batch_size = config.batch_size
@@ -36,7 +50,7 @@ class Solver(object):
         self.run_name = config.run_name
 
         # Build the model and tensorboard.
-        self.build_model(self.model)
+        self.build_model(self.model, self.actfun, self.alpha)
 
         #wandb setup
         with open('wandb.token', 'r') as file:
@@ -58,16 +72,27 @@ class Solver(object):
 
         self.network.to(self.device)
 
+        # initialize network on multiple GPUs
+        setup(self.network, torch.cuda.device_count())
+
         if torch.cuda.device_count() > 1:
             print("Let's use", torch.cuda.device_count(), "GPUs!")
             # EX. dim = 0 [30, xxx] -> [10, ...], [10, ...], [10, ...] on 3 GPUs
             self.network = DistributedDataParallel(self.network, device_ids=list(range(torch.cuda.device_count())))
 
+        # set up optmizer for network
+        self.net_optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.network.parameters()), self.lr)
+
+        print('Training these layers:')
+        for name,param in self.network.named_parameters():
+            if param.requires_grad is True:
+                print(name, param.requires_grad)
+
         # Set up weights and biases config
         wandb.config.update(config)
 
             
-    def build_model(self, model):
+    def build_model(self, model, actfun, alpha):
 
         models_list = ['baseline','vgg16','mvcnn','mvcnn_baseline','mvcnn_vgg19','mvcnn_inception']
         self.model = model
@@ -88,16 +113,9 @@ class Solver(object):
             if self.model == 'mvcnn_inception':
                 self.network = MVCNN_Inception()
             if self.model == 'mvcnn_baseline':
-                self.network = MVCNN_Baseline()
+                self.network = MVCNN_Baseline(actfun, alpha)
             if self.model == 'mvcnn_unet':
                 self.network = MVCNN_UNet()
-    
-        self.net_optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.network.parameters()), self.lr)
-
-        print('Training these layers:')
-        for name,param in self.network.named_parameters():
-            if param.requires_grad is True:
-                print(name, param.requires_grad)
 
     def reset_grad(self):
         """Reset the gradient buffers."""
@@ -221,8 +239,9 @@ class Solver(object):
                     'epoch': i+1,
                     'state_dict': self.network.state_dict(),
                     'optimizer': self.net_optimizer.state_dict(),
+                    'activation function': self.actfun,
                 }
-                save_name = 'model_checkpoint_' + str(self.model) + '_'+self.run_name+'.pth'
+                save_name = str(self.repair) + str(self.model) + '_'+self.run_name+'.pth'
                 torch.save(state, save_name)
 
                 #log images

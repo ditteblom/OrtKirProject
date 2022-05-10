@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
 import torchvision
 from utils import train, predict, score_fluoroscopy, score_time, score_xray, score_retries_cannulated_dhs, score_retries_hansson, \
-                drill_dist_hansson, guidewire_dist, drill_dist_hansson
+                drill_dist_hansson, guidewire_dist, drill_dist_hansson, drill_dhs, stepreamer_dist, drill_dist_cannulated, guidesize_cannulated
 from skimage.io import imread_collection
 import cv2
 import pandas as pd
@@ -76,7 +76,7 @@ class SimulationData(torch.utils.data.Dataset):
             # find variables to be corrected in score
             if repair_type == "001_hansson_pin_system":
               var_score = []
-              variables = ["Fluoroscopy", "Total time", "Nr of X-rays", "Nr of retries", "Distal drill distance to joint surface (mm)",
+              variables = ["Fluoroscopy (normalized)", "Total time", "Nr of X-rays", "Nr of retries", "Distal drill distance to joint surface (mm)",
                           "Guide wire distance to joint surface (mm)", "Proximal drill distance to joint surface (mm)"]
               for var in variables:
                 idx_end = lines.find(var)
@@ -91,6 +91,59 @@ class SimulationData(torch.utils.data.Dataset):
               score += drill_dist_hansson(var_score[4])
               score += guidewire_dist(var_score[5])
               score += drill_dist_hansson(var_score[6])
+
+              if score > maxscore:
+                score = maxscore
+            
+            if repair_type == "029_dynamic_hip_screw":
+              var_score = []
+              variables = ["Fluoroscopy (normalized)", "Time", "Nr of X-rays", "Nr of retries", "3.2 mm drill outside cortex (mm)",
+                          "Guide wire distance to joint surface (mm)", "Step reamer distance to joint surface (mm)"]
+              for var in variables:
+                idx_end = lines.find(var)
+                if idx_end == -1 and var == "Nr of X-rays":
+                    var = 'Number of X-rays'
+                    idx_end = lines.find(var)
+                elif idx_end == -1 and var == "Nr of retries":
+                    var = 'Number of retries'
+                    idx_end = lines.find(var)
+                tmp = lines[:idx_end]
+                idx_start = tmp.rfind('\n')
+                var_score.append(np.double(lines[idx_start+1:idx_end-4]))
+
+              score += score_fluoroscopy(var_score[0])
+              score += score_time(var_score[1])
+              score += score_xray(var_score[2])
+              score += score_retries_cannulated_dhs(var_score[3])
+              score += drill_dhs(var_score[4])
+              score += guidewire_dist(var_score[5])
+              score += stepreamer_dist(var_score[6])
+
+              if score > maxscore:
+                score = maxscore
+
+            if repair_type == "028_cannulated_screws":
+              var_score = []
+              variables = ["Fluoroscopy (normalized)", "Time", "Number of X-Rays", "Nr of retries",
+                             "Inferior guide wire distance to joint surface","Posterior guide wire distance to joint surface",
+                             "Inferior drill distance to joint surface","Posterior drill distance to joint surface",
+                             "Guide size"
+                             ]
+              for var in variables:
+                idx_end = lines.find(var)
+                tmp = lines[:idx_end]
+                idx_start = tmp.rfind('\n')
+                var_score.append(np.double(lines[idx_start+1:idx_end-4]))
+
+              score += score_fluoroscopy(var_score[0])
+              score += score_time(var_score[1])
+              score += score_xray(var_score[2])
+              score += score_retries_cannulated_dhs(var_score[3])
+              score += guidewire_dist(var_score[4])
+              score += guidewire_dist(var_score[5])
+              score += drill_dist_cannulated(var_score[6])
+              score += drill_dist_cannulated(var_score[7])
+              score += guidesize_cannulated(var_score[8])
 
               if score > maxscore:
                 score = maxscore
@@ -130,7 +183,7 @@ class SimulationData(torch.utils.data.Dataset):
         data = df.merge(assess, how = 'left')
         data['expert']= data.image_path_frontal.apply(if_expert)
 
-        data.to_csv("data.csv")
+        data.to_csv(repair_type + "_data.csv")
 
         # get path for frontal images
         #df_frontal = df[df.image_path.str.contains('|'.join(["frontal"]))==True]
@@ -159,6 +212,11 @@ class SimulationData(torch.utils.data.Dataset):
 
         self.mean_ = 'log(1-scores)' #torch.mean(score_train)
         self.std_ = 'log(1-scores)' #torch.mean(score_trainval)
+
+        image_test_df = pd.DataFrame(image_test)
+        image_test_df.to_csv(repair_type +'_testdata.csv')
+        image_train_df = pd.DataFrame(image_train)
+        image_train_df.to_csv(repair_type +'_traindata.csv')
         
         # devide images into train, validation and test set
         if split == "train":
@@ -367,10 +425,10 @@ class SimulationData(torch.utils.data.Dataset):
         '''Return scales (mean and std) for trainset'''
         return self.mean_, self.std_
 
-def get_loader(repair_type, split, data_path = "/work3/dgro/Data/", batch_size=16, transform = None, num_workers=0):
+def get_loader(repair_type, split, data_path = "/work3/dgro/Data/", batch_size=16, transform = None, num_workers=0, seed = 8):
     """Build and return a data loader."""
     
-    dataset = SimulationData(repair_type, split, data_path, transform, train_size = 0.8, test_size = 0.2, seed = 8)
+    dataset = SimulationData(repair_type, split, data_path, transform, train_size = 0.8, test_size = 0.2, seed = seed)
     data_loader = data.DataLoader(dataset=dataset,
                                   batch_size=batch_size,
                                   shuffle=True,

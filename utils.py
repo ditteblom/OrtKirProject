@@ -159,7 +159,7 @@ def drill_dhs(x):
   elif x < 10:
     return 0
   else:
-    -np.max(-5,(10-15)*(5/10))
+    return -max(-5,(10-x)*(5/10))
 
 def guidewire_dist(x):
   if x < -10:
