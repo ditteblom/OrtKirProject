@@ -12,16 +12,6 @@ import matplotlib.pyplot as plt
 from utils import saliency
 from torch.nn.parallel import DistributedDataParallel
 
-def setup(rank, world_size):
-    os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12355'
-
-    # initialize the process group
-    dist.init_process_group("gloo", rank=rank, world_size=world_size)
-
-def cleanup():
-    dist.destroy_process_group()
-
 class Solver(object):
 
     def __init__(self, train_loader, val_loader, config):
@@ -68,25 +58,13 @@ class Solver(object):
                             text=f"Training on {self.device}"
                         )
 
+        # place network on device
         self.network.to(self.device)
-
-        # initialize network on multiple GPUs
-        #setup(self.network, torch.cuda.device_count())
-
-        if torch.cuda.device_count() > 1:
-            print("Let's use", torch.cuda.device_count(), "GPUs!")
-            # EX. dim = 0 [30, xxx] -> [10, ...], [10, ...], [10, ...] on 3 GPUs
-            self.network = DistributedDataParallel(self.network, device_ids=list(range(torch.cuda.device_count())))
 
         # set up optmizer for network
         self.net_optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.network.parameters()), self.lr)
 
-        print('Training these layers:')
-        for name,param in self.network.named_parameters():
-            if param.requires_grad is True:
-                print(name, param.requires_grad)
-
-        # Set up weights and biases config
+        # update wand with configuation
         wandb.config.update(config)
 
     def reset_grad(self):
@@ -215,7 +193,7 @@ class Solver(object):
                 ax[1,1].set_title('Saliency map lateral')
                 ax[1,1].imshow(model_slc[1], cmap = plt.cm.hot)
 
-                wandb.log({"Train images": wandb.Image(fig)}, step=i+1)
+                wandb.log({"Val images": wandb.Image(fig)}, step=i+1)
                 plt.close()
       
             # log on wandb.ai
