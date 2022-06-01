@@ -133,6 +133,7 @@ dmypy.json
 
 # data
 *.csv
+*.pdf
 
 # submit shell script
 *.sh

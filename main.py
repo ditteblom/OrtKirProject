@@ -9,25 +9,15 @@ def str2bool(v):
     return v.lower() in ('true')
 
 def main(config):
-    # For fast training.
+    size = 224
 
-    # transforms
-    if config.model == 'baseline' or config.model == 'mvcnn_unet':
-        size = 128
-    if config.model == 'vgg16':
-        size = 225
-    if config.model == 'mvcnn_inception':
-        size = 299
-    if config.model == 'mvcnn_vgg19' or config.model == 'mvcnn_baseline':
-        size = 224
-
+    # data augmentation
     train_transform = transforms.Compose([transforms.ToTensor(),
                                     transforms.Resize((size,size)),
                                     #transforms.Grayscale(num_output_channels = 1),
                                     transforms.RandomChoice([transforms.GaussianBlur(kernel_size=3, sigma=(1, 1)),
                                     transforms.RandomRotation(degrees=(15)),])
                                     ])
-    print('With data augmentation.')
     val_transform = transforms.Compose([transforms.ToTensor(),
                                     transforms.Resize((size,size)),
                                     #transforms.Grayscale(num_output_channels = 1),
@@ -47,8 +37,6 @@ if __name__ == '__main__':
 
     # Model configuration.
     parser.add_argument('--repair_type', type=str, default='001_hansson_pin_system', help='type of fracture repair')
-    parser.add_argument('--model', type=str, default='mvcnn_baseline', help='type of model')
-    parser.add_argument('--fusion', type=str, default='late', help='type of fusion')
     parser.add_argument('--actfun', type=str, default='relu', help='type of activation function')
     parser.add_argument('--alpha', type=float, default='1', help='alpha for elu activation function')
     

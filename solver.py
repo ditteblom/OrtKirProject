@@ -1,5 +1,5 @@
 import torch
-from models import MVCNN_VGG19, Baseline, VGG16, Inception_v3, MVCNN_Inception, MVCNN_UNet, MVCNN_VGG19_early, MVCNN_Baseline
+from models import MVCNN_Baseline
 import time
 import torch.nn.functional as F
 import torch.distributed as dist
@@ -33,8 +33,6 @@ class Solver(object):
 
         # Model configurations.
         self.repair = config.repair_type
-        self.model = config.model
-        self.fusion = config.fusion
         self.actfun = config.actfun
         self.alpha = config.alpha
 
@@ -49,8 +47,8 @@ class Solver(object):
         self.log_step = config.log_step
         self.run_name = config.run_name
 
-        # Build the model and tensorboard.
-        self.build_model(self.model, self.actfun, self.alpha)
+        # Build the model
+        self.network = MVCNN_Baseline(self.actfun, self.alpha)
 
         #wandb setup
         with open('wandb.token', 'r') as file:
@@ -73,7 +71,7 @@ class Solver(object):
         self.network.to(self.device)
 
         # initialize network on multiple GPUs
-        setup(self.network, torch.cuda.device_count())
+        #setup(self.network, torch.cuda.device_count())
 
         if torch.cuda.device_count() > 1:
             print("Let's use", torch.cuda.device_count(), "GPUs!")
@@ -90,32 +88,6 @@ class Solver(object):
 
         # Set up weights and biases config
         wandb.config.update(config)
-
-            
-    def build_model(self, model, actfun, alpha):
-
-        models_list = ['baseline','vgg16','mvcnn','mvcnn_baseline','mvcnn_vgg19','mvcnn_inception']
-        self.model = model
-
-        #assert (self.model in models_list), 'model needs to be baseline, vgg16, inceptionv3, mvcnn or mvcnnbaseline'
-
-        if self.fusion == 'early':
-            self.network = MVCNN_VGG19_early()
-        else:
-            if self.model == 'baseline':
-                self.network = Baseline()
-            if self.model == 'vgg16':
-                self.network = VGG16()
-            if self.model == 'inceptionv3':
-                self.network = Inception_v3()
-            if self.model == 'mvcnn_vgg19':
-                self.network = MVCNN_VGG19()
-            if self.model == 'mvcnn_inception':
-                self.network = MVCNN_Inception()
-            if self.model == 'mvcnn_baseline':
-                self.network = MVCNN_Baseline(actfun, alpha)
-            if self.model == 'mvcnn_unet':
-                self.network = MVCNN_UNet()
 
     def reset_grad(self):
         """Reset the gradient buffers."""
@@ -146,33 +118,22 @@ class Solver(object):
             train_loss = []
 
             # Fetch data.
-            for _, (data, scores) in enumerate(data_loader):
-                data, scores = data.to(self.device, dtype=torch.float), scores.to(self.device)#, grays.to(self.device), ans.to(self.device)
-
-                #_, _, _, rows, _ = data.shape
-                #Center crop the segmentation
-                #ans = transforms.CenterCrop(rows-40)(ans).long()             
+            for _, (data, scores, _) in enumerate(data_loader):
+                data, scores, _ = data.to(self.device, dtype=torch.float), scores.to(self.device)       
        
             # =================================================================================== #
             #                               2. Train the network                                  #
             # =================================================================================== #
             
-                self.network = self.network.train()
-                            
-                # reser gradients
+                # set network in train mode
+                self.network = self.network.train() 
+
+                # reset gradients
                 self.reset_grad()
 
-                # forward pass
-                # if self.model == 'mvcnn_unet':
-                #     output_recon, output = self.network(data)
-                #     print('output_recon shape:')
-                #     print(output_recon.shape)
-                #     # loss
-                #     loss_identic = F.l1_loss(output_recon.squeeze(), ans.squeeze())
-                #     loss_score = F.mse_loss(output.float(), scores.float().unsqueeze(1))
-                #     loss = loss_identic + loss_score
-                # else:
+                # pass through network
                 output = self.network(data)
+
                 # loss
                 loss = F.l1_loss(output.float(), scores.float().unsqueeze(1))
 
@@ -190,24 +151,12 @@ class Solver(object):
             val_loss = []
 
             # Fetch validation data.
-            for data, scores in val_loader:
+            for data, scores, _ in val_loader:
 
                 data, scores = data.to(self.device, dtype=torch.float), scores.to(self.device)
-
-                # centercrop annotation
-                #ans = transforms.CenterCrop(88)(ans).long()
-
-                # set netork to evaluation mode
                 self.network = self.network.eval()
 
                 with torch.no_grad():
-                    # if self.model == 'mvcnn_unet':
-                    #     output_recon, output = self.network(data)
-                    #     # loss
-                    #     loss_identic = F.l1_loss(output_recon.squeeze(), ans.squeeze())
-                    #     loss_score = F.mse_loss(output.float(), target.float().unsqueeze(1))
-                    #     loss = loss_identic + loss_score
-                    # else:
                     output = self.network(data)
                     # loss
                     loss = F.l1_loss(output.float(), scores.float().unsqueeze(1))
@@ -241,62 +190,34 @@ class Solver(object):
                     'optimizer': self.net_optimizer.state_dict(),
                     'activation function': self.actfun,
                 }
-                save_name = str(self.repair) + str(self.model) + '_'+self.run_name+'.pth'
+                save_name = str(self.repair) + '_'+ str(self.model) + '_'+self.run_name+'.pth'
                 torch.save(state, save_name)
 
-                #log images
-                if self.model == 'mvcnn_unet':
-                    fig, axs = plt.subplots(2, 2)
-                    axs[0,0].imshow(
-                        data[0,0,:,:,:].permute(1, 2, 0).detach().cpu().numpy(), cmap = 'gray'
-                    )
-                    axs[0,0].set(title="Frontal image")
+                #log saliency map to wandb
+                image = data[0]
+                score = scores[0]
+                _, model_slc = saliency(image, self.network)
 
-                    x_show = output_recon.squeeze()
-                    axs[1,0].imshow(
-                        x_show[0,0,:,:].detach().cpu().numpy(),cmap = 'gray'
-                    )
-                    axs[1,0].set(title="Forward pass UNet")
+                fig, ax = plt.subplots(2,2, figsize = (10,10))
+                fig.suptitle(self.run_name)
 
-                    axs[0,1].imshow(
-                        data[0,1,:,:,:].permute(1, 2, 0).detach().cpu().numpy(), cmap = 'gray'
-                    )
-                    axs[0,1].set(title="Lateral image")
+                ax[0,0].imshow(image.permute(1, 2, 3, 0)[0].cpu().numpy())
+                ax[0,0].set_title("Epoch: {:d}, Score: {:.4f}, Prediction: {:.4f}".format(i+1, score.item(), output[0].item()))
+                ax[0,0].imshow(model_slc[0], cmap = plt.cm.hot, alpha = 0.5)
 
-                    x_show = output_recon.squeeze()
-                    axs[1,1].imshow(
-                        x_show[0,1,:,:].detach().cpu().numpy(),cmap = 'gray'
-                    )
-                    axs[1,1].set(title="Forward pass UNet")
+                ax[0,1].set_title('Saliency map frontal')
+                ax[0,1].imshow(model_slc[0], cmap = plt.cm.hot)
 
-                    wandb.log({"Train images": wandb.Image(fig)}, step=i+1)
-                    plt.close()
-                else:
-                    image = data[0]
-                    score = scores[0]
-                    _, model_slc = saliency(image, self.network)
+                ax[1,0].imshow(image.permute(1, 2, 3, 0)[1].cpu().numpy())
+                ax[1,0].set_title("Epoch: {:d}, Score: {:.4f}, Prediction: {:.4f}".format(i+1, score.item(), output[0].item()))
+                ax[1,0].imshow(model_slc[1], cmap = plt.cm.hot, alpha = 0.5)
 
-                    fig, ax = plt.subplots(2,2, figsize = (10,10))
-                    fig.suptitle(self.run_name)
+                ax[1,1].set_title('Saliency map lateral')
+                ax[1,1].imshow(model_slc[1], cmap = plt.cm.hot)
 
-                    ax[0,0].imshow(image.permute(1, 2, 3, 0)[0].cpu().numpy())
-                    ax[0,0].set_title("Epoch: {:d}, Score: {:.4f}, Prediction: {:.4f}".format(i+1, score.item(), output[0].item()))
-                    ax[0,0].imshow(model_slc[0], cmap = plt.cm.hot, alpha = 0.5)
-
-                    ax[0,1].set_title('Saliency map frontal')
-                    ax[0,1].imshow(model_slc[0], cmap = plt.cm.hot)
-
-                    ax[1,0].imshow(image.permute(1, 2, 3, 0)[1].cpu().numpy())
-                    ax[1,0].set_title("Epoch: {:d}, Score: {:.4f}, Prediction: {:.4f}".format(i+1, score.item(), output[0].item()))
-                    ax[1,0].imshow(model_slc[1], cmap = plt.cm.hot, alpha = 0.5)
-
-                    ax[1,1].set_title('Saliency map lateral')
-                    ax[1,1].imshow(model_slc[1], cmap = plt.cm.hot)
-
-                    wandb.log({"Train images": wandb.Image(fig)}, step=i+1)
-                    plt.close()
-
-            
+                wandb.log({"Train images": wandb.Image(fig)}, step=i+1)
+                plt.close()
+      
             # log on wandb.ai
             wandb.log({"epoch": i+1,
                         "train loss": np.mean(train_loss),
