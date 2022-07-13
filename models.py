@@ -11,6 +11,7 @@ class MVCNN_Baseline(nn.Module):
 
     self.nView = 2 # default
 
+    # choose between relu or elu as activation function
     if actfun == 'relu':
       act = nn.ReLU()
     elif actfun == 'elu':
@@ -29,7 +30,7 @@ class MVCNN_Baseline(nn.Module):
                   # CONV 1_3
                   nn.Conv2d(in_channels=32, out_channels=32, kernel_size=5, stride=1, padding=2),
 
-                  # MAXPOOL 1, 224 -> 112
+                  # MAXPOOL 1, size: 224 -> 112
                   nn.MaxPool2d(kernel_size=2),
                   act,
 
@@ -44,7 +45,7 @@ class MVCNN_Baseline(nn.Module):
                   # CONV 2_3
                   nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding=1),
 
-                  # MAXPOOL 2, 112 -> 56
+                  # MAXPOOL 2, size: 112 -> 56
                   nn.MaxPool2d(kernel_size=2),
                   act,#
 
@@ -59,7 +60,7 @@ class MVCNN_Baseline(nn.Module):
                   # CONV 3_3
                   nn.Conv2d(in_channels=64, out_channels=32, kernel_size=3, stride=1, padding=1),
 
-                  # MAXPOOL 3, 56 -> 28
+                  # MAXPOOL 3, size: 56 -> 28
                   nn.MaxPool2d(kernel_size=2),
                   act,#
         )

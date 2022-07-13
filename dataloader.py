@@ -1,43 +1,15 @@
-from __future__ import annotations
 import glob
 import numpy as np
 import torch
 from sklearn.model_selection import train_test_split
-import PIL.Image as Image
-from sklearn.preprocessing import StandardScaler
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torchvision.datasets as datasets
 from torch.utils import data
-from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
-import torchvision
-from utils import train, predict, score_fluoroscopy, score_time, score_xray, score_retries_cannulated_dhs, score_retries_hansson, \
+from utils import score_fluoroscopy, score_time, score_xray, score_retries_cannulated_dhs, score_retries_hansson, \
                 drill_dist_hansson, guidewire_dist, drill_dist_hansson, drill_dhs, stepreamer_dist, drill_dist_cannulated, guidesize_cannulated
 from skimage.io import imread_collection
-import cv2
 import pandas as pd
 import numpy as np
-
-experts = ['HenrikV',
-'hpalm',
-'jalv003',
-'LarsL',
-'MadsV',
-'NanaS',
-'PeterS',
-'PeterT',
-'ThomasB']
-
-def if_expert(row):
-    for expert in experts:
-        if expert in row:
-            return 1
-        else:
-            return 0
-
-eps = 10e-16
 
 class SimulationData(torch.utils.data.Dataset):
     def __init__(self, repair_type, split, data_path = "/work3/dgro/Data/", transform = None, train_size = 0.8, test_size = 0.2, seed = 8):
@@ -175,7 +147,7 @@ class SimulationData(torch.utils.data.Dataset):
                                     # black images which have a score of 0
 
         # load assessment on train data
-        assess_train_path = repair_type + '_traindata_randomized_AG.csv'
+        assess_train_path = 'annotations/' + repair_type + '_traindata_randomized_AG.csv'
         assess_train = pd.read_csv(assess_train_path, index_col = 0, delimiter=',')
         assess_train = assess_train[['no','assessment']]
 
@@ -183,7 +155,7 @@ class SimulationData(torch.utils.data.Dataset):
         data = df.merge(assess_train, how = 'left', on = 'no') # now -> data + train
 
         # load assessment on test data
-        assess_path = repair_type + '_testdata_randomized_AG.csv'
+        assess_path = 'annotations/' + repair_type + '_testdata_randomized_AG.csv'
         assess = pd.read_csv(assess_path, index_col = 0, delimiter=',')
         assess = assess[['no','assessment']]
 
@@ -199,7 +171,7 @@ class SimulationData(torch.utils.data.Dataset):
         # assign expert status
         data['expert']= data.image_path_frontal.apply(if_expert)
 
-        data.to_csv(repair_type + "_data.csv")
+        data.to_csv('annotations/' + repair_type + "_data.csv")
 
         # get path for frontal images
         frontal_paths = data.image_path_frontal.tolist() #[df.image_path.str.contains('|'.join(["frontal"]))==True].tolist()

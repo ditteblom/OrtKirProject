@@ -13,7 +13,6 @@ from sklearn.metrics import confusion_matrix
 plt.style.use('seaborn')
 import wandb
 import pandas as pd
-from models import UNet
 import torch.nn as nn
 from datetime import datetime
 
