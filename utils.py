@@ -1,6 +1,6 @@
 # preamble
-from re import X
-from attr import dataclass
+#from re import X
+#from attr import dataclass
 import numpy as np
 import torch
 from sklearn.model_selection import train_test_split
@@ -17,7 +17,7 @@ import torch.nn as nn
 from datetime import datetime
 
 # train on GPU if available
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda' if torch.cuda.is_available() else 'mps')
 
 # Training function
 def train(model, optimizer, loss_fun, train_loader, test_loader, num_epochs=10, validation = False, scheduler = None, seg = False):

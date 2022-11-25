@@ -147,8 +147,15 @@ dmypy.json
 *.pth
 *.ckpt
 
-# data and wand
+# data
 Data/
-wandb/
+DataA/
+Xrays/
+annotations/
+
+# misc
 ad_hoc.ipynb
+
+# wand
+wandb/
 *.token

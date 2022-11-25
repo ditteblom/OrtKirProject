@@ -33,7 +33,7 @@ class Solver(object):
         
         # Miscellaneous.
         self.use_cuda = torch.cuda.is_available()
-        self.device = torch.device('cuda' if self.use_cuda else 'cpu')
+        self.device = torch.device('cuda' if self.use_cuda else 'mps')
         self.log_step = config.log_step
         self.run_name = config.run_name
 
@@ -48,11 +48,11 @@ class Solver(object):
         wandb.init(project = "ort-project", entity = "ditteblom", reinit=True, name=self.run_name, settings=wandb.Settings(start_method="fork"))
 
         # Miscellaneous.
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'mps')
         if self.device.type == 'cuda':
             print("Training on GPU.")
         else:
-            print("Training on CPU.")
+            print("Training on M1 GPU.")
             wandb.alert(
                             title=f"Training on {self.device}", 
                             text=f"Training on {self.device}"
@@ -82,7 +82,7 @@ class Solver(object):
         keys = ['train loss','validation loss']
 
         # to watch on wandb.ai
-        wandb.watch(self.network, log = "None")
+        wandb.watch(self.network, log = None)
             
         # Start training.
         print('Start training...')
@@ -96,8 +96,8 @@ class Solver(object):
             train_loss = []
 
             # Fetch data.
-            for _, (data, scores, _) in enumerate(data_loader):
-                data, scores, _ = data.to(self.device, dtype=torch.float), scores.to(self.device)       
+            for _, (data, scores) in enumerate(data_loader):
+                data, scores = data.to(self.device, dtype=torch.float), scores.to(self.device)       
        
             # =================================================================================== #
             #                               2. Train the network                                  #
@@ -129,9 +129,9 @@ class Solver(object):
             val_loss = []
 
             # Fetch validation data.
-            for data, scores, _ in val_loader:
+            for data, scores in val_loader:
 
-                data, scores = data.to(self.device, dtype=torch.float), scores.to(self.device)
+                data, scores = data.to(self.device), scores.to(self.device)
                 self.network = self.network.eval()
 
                 with torch.no_grad():
@@ -168,7 +168,7 @@ class Solver(object):
                     'optimizer': self.net_optimizer.state_dict(),
                     'activation function': self.actfun,
                 }
-                save_name = str(self.repair) + '_'+ str(self.model) + '_'+self.run_name+'.pth'
+                save_name = str(self.repair) + '_'+self.run_name+'.pth'
                 torch.save(state, save_name)
 
                 #log saliency map to wandb

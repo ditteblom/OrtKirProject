@@ -12,13 +12,13 @@ import pandas as pd
 import numpy as np
 
 class SimulationData(torch.utils.data.Dataset):
-    def __init__(self, repair_type, split, data_path = "/work3/dgro/Data/", transform = None, train_size = 0.8, test_size = 0.2, seed = 8):
+    def __init__(self, repair_type, split, data_path = "Data/", transform = None, train_size = 0.8, test_size = 0.2, seed = 8, annotations = False):
         'Initializing data'
         self.data_path = data_path
         self.repair_type = repair_type + "/001_copenahgen_test_1"
         self.transform = transform
 
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        device = torch.device('cuda' if torch.cuda.is_available() else 'mps')
         self.device = device
 
         img_files = glob.glob(self.data_path + '***/**/*.jpg', recursive=True)
@@ -139,49 +139,50 @@ class SimulationData(torch.utils.data.Dataset):
         df_scores.no = df_scores.no.apply(lambda x: x[-19:-4])
 
         # merge the three dataframes
-        df = df_frontal.merge(df_lateral, how = 'left', on = 'no')
+        df = df_frontal #df_frontal.merge(df_lateral, how = 'left', on = 'no')
         df = df.merge(df_scores, how = 'left', on = 'no')
-        df = df[df.image_path_frontal.str.contains('|'.join(["admin","guest","resultTableImage"]))==False]
-        df = df[df.image_path_lateral.str.contains('|'.join(["admin","guest","resultTableImage"]))==False]\
-                .loc[~(df["true scores"]<=0)] # remove all admin and guest files and the images of the results. Remove all black
+        df = df[df.image_path_frontal.str.contains('|'.join(["admin","guest","resultTableImage"]))==False].loc[~(df["true scores"]<=0)]
+        #df = df[df.image_path_lateral.str.contains('|'.join(["admin","guest","resultTableImage"]))==False].loc[~(df["true scores"]<=0)] 
+        #     # remove all admin and guest files and the images of the results. Remove all black
                                     # black images which have a score of 0
 
         # load assessment on train data
-        assess_train_path = 'annotations/' + repair_type + '_traindata_randomized_AG.csv'
-        assess_train = pd.read_csv(assess_train_path, index_col = 0, delimiter=',')
-        assess_train = assess_train[['no','assessment']]
+        if annotations:
+          assess_train_path = 'annotations/' + repair_type + '_traindata_randomized_AG.csv'
+          assess_train = pd.read_csv(assess_train_path, index_col = 0, delimiter=',')
+          assess_train = assess_train[['no','assessment']]
 
-        # merge with data
-        data = df.merge(assess_train, how = 'left', on = 'no') # now -> data + train
+          # merge with data
+          data = df.merge(assess_train, how = 'left', on = 'no') # now -> data + train
 
-        # load assessment on test data
-        assess_path = 'annotations/' + repair_type + '_testdata_randomized_AG.csv'
-        assess = pd.read_csv(assess_path, index_col = 0, delimiter=',')
-        assess = assess[['no','assessment']]
+          # load assessment on test data
+          assess_path = 'annotations/' + repair_type + '_testdata_randomized_AG.csv'
+          assess = pd.read_csv(assess_path, index_col = 0, delimiter=',')
+          assess = assess[['no','assessment']]
 
-        # merge with data
-        data = data.merge(assess, how = 'left', on = 'no') # now -> data + train + test
+          # merge with data
+          data = data.merge(assess, how = 'left', on = 'no') # now -> data + train + test
 
-        # assessment will be in two columns now -> combine
-        data = data.fillna(0)
-        data['assessment'] = data.apply(lambda x: x['assessment_x'] + x['assessment_y'],axis=1)
-        data = data.drop(['assessment_x','assessment_y'], axis = 1)
-        data['assessment'] = data.assessment.replace(0, np.nan)
+          # assessment will be in two columns now -> combine
+          data = data.fillna(0)
+          data['assessment'] = data.apply(lambda x: x['assessment_x'] + x['assessment_y'],axis=1)
+          data = data.drop(['assessment_x','assessment_y'], axis = 1)
+          data['assessment'] = data.assessment.replace(0, np.nan)
 
-        # assign expert status
-        data['expert']= data.image_path_frontal.apply(if_expert)
-
-        data.to_csv('annotations/' + repair_type + "_data.csv")
+          data.to_csv('annotations/' + repair_type + "_data.csv")
+        else:
+          df['assessment'] = np.ones(len(df))
+          data = df
 
         # get path for frontal images
         frontal_paths = data.image_path_frontal.tolist() #[df.image_path.str.contains('|'.join(["frontal"]))==True].tolist()
 
         # get path for lateral images
-        lateral_paths = data.image_path_lateral.tolist()
+        #lateral_paths = data.image_path_lateral.tolist()
 
         image_paths = []
         for i in range(len(frontal_paths)):
-          image_paths.append([frontal_paths[i],lateral_paths[i]]) # stack frontal and lateral paths
+          image_paths.append([frontal_paths[i]])#,lateral_paths[i]]) # stack frontal and lateral paths
 
         # convert to lists
         scores_list = data.score.tolist()
@@ -190,15 +191,14 @@ class SimulationData(torch.utils.data.Dataset):
         assess_list = data.assessment.tolist()
         assess_list = torch.Tensor(assess_list).to(self.device)
 
-        expert_list = data.expert.tolist()
-        expert_list = torch.Tensor(expert_list).to(self.device)
-
         image_trainval, image_test, score_trainval, score_test, assess_trainval, assess_test = train_test_split(image_paths, scores_list, assess_list, test_size=test_size, train_size=train_size, random_state=seed)
         image_train, image_val, score_train, score_val, assess_train, assess_val = train_test_split(image_trainval, score_trainval, assess_trainval, test_size=0.2, train_size=0.8, random_state=seed)
 
         # save train and test as csv files
         image_test_df = pd.DataFrame([image_test,score_test, assess_test])
         image_test_df.to_csv(repair_type +'_testdata.csv')
+        image_val_df = pd.DataFrame([image_val,score_val,assess_val])
+        image_val_df.to_csv(repair_type +'_valdata.csv')
         image_train_df = pd.DataFrame([image_train,score_train,assess_train])
         image_train_df.to_csv(repair_type +'_traindata.csv')
         
@@ -222,7 +222,8 @@ class SimulationData(torch.utils.data.Dataset):
         # get path from init
         image_path = self.images[idx]
         # read in images
-        images = imread_collection([image_path[0], image_path[1]], conserve_memory=True) # stack the frontal and lateral images
+        #images = imread_collection([image_path[0], image_path[1]], conserve_memory=True) # stack the frontal and lateral images
+        images = imread_collection([image_path[0]], conserve_memory=True)
         # resize to 900x900 and crop
         transform = transforms.Compose([transforms.ToPILImage(),
                                     transforms.Resize((900,900)),
@@ -232,7 +233,7 @@ class SimulationData(torch.utils.data.Dataset):
         # the indices for the cropping are qualitatively assessed.
         # Should be modified to fit the images for the specific problem.
         images_crop += [np.array(images_resized[0])[50:650,200:800]/255.0]
-        images_crop += [np.array(images_resized[1])[100:800,100:800]/255.0]
+        #images_crop += [np.array(images_resized[1])[100:800,100:800]/255.0]
 
         if self.transform:
             images = torch.stack([self.transform(img) for img in images_crop], dim = 1) # transform both frontal and lateral images
@@ -240,9 +241,9 @@ class SimulationData(torch.utils.data.Dataset):
         # get score and assessment for the images
         score = self.scores[idx]
         assess = self.assess[idx]
-        return images.float(), score.float(), assess.float()
+        return images.float(), score.float()
 
-def get_loader(repair_type, split, data_path = "/work3/dgro/Data/", batch_size=16, transform = None, num_workers=0, shuffle = True, seed = 8):
+def get_loader(repair_type, split, data_path = "Data/", batch_size=16, transform = None, num_workers=0, shuffle = True, seed = 8):
     """Build and return a data loader."""
     
     dataset = SimulationData(repair_type, split, data_path, transform, train_size = 0.8, test_size = 0.2, seed = seed)
