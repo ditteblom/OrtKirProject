@@ -1,4 +1,4 @@
-# OrtSurProject
+# OrtSurSim Project
 
 The purpose of this project is to create a CNN based model as a proof of concept for evaluating surgical skills from based solely on simulated Xray images of hip osteosynthesis.
 
